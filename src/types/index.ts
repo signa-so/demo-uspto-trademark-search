@@ -93,7 +93,6 @@ export interface Deadline {
   grace_expiry: string | null
   window_opens: string | null
   jurisdiction_code: string | null
-  status: string
   urgency: string
   days_until_due: number
   consequence_if_missed: string | null
@@ -150,7 +149,7 @@ export interface TrademarkEvent {
   event_type: string
   description: string | null
   raw_code: string | null
-  raw_label: string | null
+  raw: { code: string | null; label: string | null } | null
   event_scope: string | null
   status_after_event: string | null
   nice_class_number: number | null
@@ -210,7 +209,6 @@ export interface TrademarkDetail extends TrademarkSummary {
   classifications: Classification[]
   owners?: Owner[]
   attorneys?: Attorney[]
-  deadlines?: Deadline[]
   filing_bases?: FilingBasis[]
   publications?: Publication[]
   design_codes?: DesignCode[]
@@ -254,21 +252,6 @@ export interface SearchResponse {
   request_id: string
   aggregations: Aggregations
   search_meta: SearchMeta
-}
-
-export interface IdentityResponse {
-  object: "identity"
-  org_id: string
-  org_name: string
-  plan: string
-  api_key: {
-    id: string
-    prefix: string
-    scopes: string[]
-    rate_limit_tier: string
-  }
-  livemode: boolean
-  request_id: string
 }
 
 export interface SearchFilters {
