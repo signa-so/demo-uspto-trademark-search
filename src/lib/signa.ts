@@ -1,11 +1,11 @@
 import type {
   SearchResponse,
-  IdentityResponse,
   SearchFilters,
   SortOption,
   TrademarkDetail,
   EventsResponse,
   ProceedingsResponse,
+  Deadline,
 } from "@/types"
 
 const BASE = "/api/v1"
@@ -71,16 +71,21 @@ async function parseListResponse<T>(res: Response): Promise<T> {
   return body as T
 }
 
-export async function getMe(apiKey: string, signal?: AbortSignal): Promise<IdentityResponse> {
-  const res = await fetch(`${BASE}/me`, {
-    headers: headers(apiKey),
-    signal,
-  })
-  if (!res.ok) throw await parseError(res)
-  return res.json()
-}
-
 export type SearchStrategy = "exact" | "fuzzy" | "phonetic" | "prefix"
+
+// The API's similarity channels for each search strategy (the same mapping it applied to the retired `strategies` param).
+const STRATEGY_CHANNELS: Record<SearchStrategy, string[]> = {
+  exact: ["identical", "lookalike"],
+  fuzzy: ["fuzzy", "embedded", "lookalike"],
+  phonetic: ["phonetic"],
+  prefix: ["embedded"],
+}
+const CHANNEL_ORDER = ["identical", "fuzzy", "embedded", "phonetic", "lookalike"]
+
+function similarityFor(strategies: SearchStrategy[]): string[] {
+  const channels = new Set(strategies.flatMap((s) => STRATEGY_CHANNELS[s]))
+  return CHANNEL_ORDER.filter((c) => channels.has(c))
+}
 
 export async function searchTrademarks(
   apiKey: string,
@@ -109,10 +114,10 @@ export async function searchTrademarks(
   }
 
   if (params.query && !isIdentifierSearch) {
-    body.query = params.query
-    body.strategies = params.strategies && params.strategies.length > 0
-      ? params.strategies
-      : ["exact", "fuzzy"]
+    body.q = params.query
+    body.similarity = similarityFor(
+      params.strategies && params.strategies.length > 0 ? params.strategies : ["exact", "fuzzy"]
+    )
   }
 
   if (params.cursor) {
@@ -174,7 +179,7 @@ export async function getTrademarkHistory(
   id: string,
   signal?: AbortSignal
 ): Promise<EventsResponse> {
-  const res = await fetch(`${BASE}/trademarks/${id}/history?limit=50`, {
+  const res = await fetch(`${BASE}/trademarks/${id}/events?limit=50`, {
     headers: headers(apiKey),
     signal,
   })
@@ -193,4 +198,40 @@ export async function getTrademarkProceedings(
   })
   if (!res.ok) throw await parseError(res)
   return parseListResponse<ProceedingsResponse>(res)
+}
+
+interface DeadlineRow {
+  type: string
+  due_date: string
+  grace_expiry_date: string | null
+  window_opens: string | null
+  jurisdiction_code: string | null
+  urgency: string
+  consequence_if_missed: string | null
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+export async function getTrademarkDeadlines(
+  apiKey: string,
+  id: string,
+  signal?: AbortSignal
+): Promise<Deadline[]> {
+  const res = await fetch(`${BASE}/deadlines?trademark_id=${encodeURIComponent(id)}&limit=50`, {
+    headers: headers(apiKey),
+    signal,
+  })
+  if (!res.ok) throw await parseError(res)
+  const { data } = await parseListResponse<{ data: DeadlineRow[] }>(res)
+  return data.map((row) => ({
+    type: row.type,
+    name: row.type.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()),
+    due_date: row.due_date,
+    grace_expiry: row.grace_expiry_date,
+    window_opens: row.window_opens,
+    jurisdiction_code: row.jurisdiction_code,
+    urgency: row.urgency,
+    days_until_due: Math.ceil((Date.parse(row.due_date) - Date.now()) / DAY_MS),
+    consequence_if_missed: row.consequence_if_missed,
+  }))
 }

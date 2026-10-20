@@ -13,10 +13,11 @@ import { ChevronLeft, ChevronRight, X, ExternalLink, AlertCircle } from "lucide-
 import {
   getTrademark,
   getTrademarkHistory,
+  getTrademarkDeadlines,
   getTrademarkProceedings,
   friendlyErrorMessage,
 } from "@/lib/signa"
-import type { TrademarkSummary, TrademarkDetail, TrademarkEvent, Proceeding, Address } from "@/types"
+import type { TrademarkSummary, TrademarkDetail, TrademarkEvent, Proceeding, Address, Deadline } from "@/types"
 
 function formatAddress(addr: Address | string | null | undefined): string | null {
   if (!addr) return null
@@ -117,6 +118,7 @@ export function TrademarkDetailDialog({
   const [detail, setDetail] = useState<TrademarkDetail | null>(null)
   const [events, setEvents] = useState<TrademarkEvent[]>([])
   const [proceedings, setProceedings] = useState<Proceeding[]>([])
+  const [deadlines, setDeadlines] = useState<Deadline[]>([])
   const [loading, setLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
 
@@ -149,6 +151,15 @@ export function TrademarkDetailDialog({
       .catch((err) => {
         if (ignore(err) || controller.signal.aborted) return
         setEvents([])
+      })
+
+    getTrademarkDeadlines(apiKey, id, controller.signal)
+      .then((r) => {
+        if (!controller.signal.aborted) setDeadlines(r)
+      })
+      .catch((err) => {
+        if (ignore(err) || controller.signal.aborted) return
+        setDeadlines([])
       })
 
     getTrademarkProceedings(apiKey, id, controller.signal)
@@ -235,13 +246,13 @@ export function TrademarkDetailDialog({
     "international_renewal",
     "restoration",
   ])
-  const maintenanceDeadlines = (d?.deadlines ?? []).filter((dl) =>
+  const maintenanceDeadlines = deadlines.filter((dl) =>
     maintenanceTypes.has(dl.type)
   )
   const renewalDeadline =
     maintenanceDeadlines.find((dl) => dl.type === "renewal" || dl.type === "combined_renewal_and_use") ?? null
   const nextForm =
-    (d?.deadlines ?? []).slice().sort((a, b) => a.days_until_due - b.days_until_due)[0] ?? null
+    deadlines.slice().sort((a, b) => a.days_until_due - b.days_until_due)[0] ?? null
 
   // Find historical declaration events (§8, §9, §15)
   const declarationEvents = events.filter((e) => {
@@ -614,7 +625,7 @@ export function TrademarkDetailDialog({
               )}
 
               {/* Maintenance information */}
-              {((d?.deadlines && d.deadlines.length > 0) || declarationEvents.length > 0) && (
+              {(deadlines.length > 0 || declarationEvents.length > 0) && (
                 <SectionCard title="Maintenance information">
                   <dl className="grid grid-cols-2 gap-x-10 gap-y-5">
                     {declarationEvents.length > 0 && (
@@ -626,7 +637,7 @@ export function TrademarkDetailDialog({
                                 {formatDate(e.event_date)}
                               </span>
                               <span className="text-[13px] text-gray-700">
-                                {e.raw_label ?? e.description ?? e.event_type.replace(/_/g, " ")}
+                                {e.raw?.label ?? e.description ?? e.event_type.replace(/_/g, " ")}
                               </span>
                             </li>
                           ))}
@@ -660,8 +671,8 @@ export function TrademarkDetailDialog({
                       </h4>
                       <div className="space-y-2.5">
                         {maintenanceDeadlines.map((dl, i) => {
-                          const urgent = dl.urgency === "urgent"
-                          const warning = dl.urgency === "warning"
+                          const urgent = dl.urgency === "critical" || dl.urgency === "in_grace" || dl.urgency === "missed"
+                          const warning = dl.urgency === "upcoming"
                           const borderColor = urgent
                             ? "border-red-200 bg-red-50/40"
                             : warning
@@ -837,9 +848,9 @@ export function TrademarkDetailDialog({
                         {/* Content column */}
                         <div className="min-w-0">
                           <p className="text-[13px] text-gray-900 leading-[22px]">
-                            {e.raw_label ?? e.description ?? e.event_type.replace(/_/g, " ")}
+                            {e.raw?.label ?? e.description ?? e.event_type.replace(/_/g, " ")}
                           </p>
-                          {e.description && e.raw_label && e.description !== e.raw_label && (
+                          {e.description && e.raw?.label && e.description !== e.raw.label && (
                             <p className="text-[12px] text-gray-500 mt-0.5 leading-relaxed">
                               {e.description}
                             </p>
